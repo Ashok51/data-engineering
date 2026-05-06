@@ -10,7 +10,9 @@ services:
       - "${DB_PORT_HOST:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./sql/seed.sql:/docker-entrypoint-initdb.d/seed.sql
+      - ./sql/seed.sql:/docker-entrypoint-initdb.d/seed.sql   
+      # DOCKER automatically runs any scripts in this directory when the container is initialized just once. 
+      # So this is a good place to put our seed data.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-de_user} -d ${DB_NAME:-de_demo}"]
       interval: 3s
