@@ -1,0 +1,51 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: de_postgres
+    environment:
+      POSTGRES_USER: ${DB_USER:-de_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-de_password}
+      POSTGRES_DB: ${DB_NAME:-de_demo}
+    ports:
+      - "${DB_PORT_HOST:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/seed.sql:/docker-entrypoint-initdb.d/seed.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-de_user} -d ${DB_NAME:-de_demo}"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      
+  etl:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: de_etl
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-de_user}
+      DB_PASSWORD: ${DB_PASSWORD:-de_password}
+      DB_NAME: ${DB_NAME:-de_demo}
+    volumes:
+      - ./data:/data:ro
+    command: ["python", "-m", "app.main"]
+
+  pgadmin:
+    image: dpage/pgadmin4.8
+    container_name: de_pgadmin
+    profiles: ["tools"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin123}
+    ports:
+      - "${PGADMIN_PORT_HOST:-5050}:80"
+volumes:
+  postgres_data:
