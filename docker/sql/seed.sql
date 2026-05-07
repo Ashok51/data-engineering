@@ -5,9 +5,10 @@ create table if not exists staging_customers (
     created_at timestamp default current_timestamp
 );
 
-create table if not exists dim_customer (
+create table if not exists dim_customers (
     customer_id int primary key,
     first_name varchar(255) not null,
+    last_name varchar(255) not null,
     email varchar(255) not null unique,
     created_at timestamp default current_timestamp
 );
