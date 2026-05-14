@@ -37,7 +37,7 @@ services:
         condition: service_healthy
     volumes:
       - ./data:/data:ro
-    command: ["python", "-m", "app.main"]
+    command: ["python", "-m", "src.main"]
 
 volumes:
-  postgres_data:
+  pg_data:
