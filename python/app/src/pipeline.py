@@ -6,7 +6,7 @@ from .config import Config
 def log(msg: str) -> None:
 
   # simple logging (we can later improve it)
-  now =  datetime.now().isoformat(timespace="seconds")
+  now = datetime.now().isoformat(timespec="seconds")
   print(f"[{now}] {msg}", flush=True)
 
 def ensure_schema_and_tables(conn: Connection, cfg: Config) -> None:
