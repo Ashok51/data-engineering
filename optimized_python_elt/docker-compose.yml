@@ -1,0 +1,43 @@
+services:
+#  This is the database service. It uses the official  
+#  Postgres image and sets up the database with the provided environment variables
+  db:
+    image: postgres:16
+    container_name: de_pg
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      
+  #  This is the ETL service.
+  # It builds from the Dockerfile in the current directory and runs the ETL process.
+  app:
+    build:
+      context: ./app   # position of the Dockerfile
+    container_name: de_app
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      APP_SCHEMA: ${APP_SCHEMA}
+      CSV_PATH: /data/transactions.csv
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./data:/data:ro
+    command: ["python", "-m", "src.main"]
+
+volumes:
+  pg_data:
