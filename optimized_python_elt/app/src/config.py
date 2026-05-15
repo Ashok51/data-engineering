@@ -24,6 +24,10 @@ class Config:
     self.schema =  env_str("APP_SCHEMA", "data_pipeline_example_2")
     self.csv_path = env_str("CSV_PATH", "data/transactions.csv")
 
+    self.batch_size = env_int("BATCH_SIZE", 500)
+    self.max_retries = env_int("MAX_RETRIES", 5)
+    self.retry_backoff_seconds = env_int("RETRY_BACKOFF_SECONDS", 2)
+
   def dsn(self):
     return(
       f"host={self.pg_host} ",
