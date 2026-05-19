@@ -1,16 +1,19 @@
 import csv
+import json
+import time
+from typing import Iterator, Tuple, Dict, Any, List
 from datetime import datetime
+from psycopg.errors import OperationalError
 from psycopg import Connection
 from .config import Config
+from .logger import setup_logger
 
-def log(msg: str) -> None:
-
-  # simple logging (we can later improve it)
-  now = datetime.now().isoformat(timespec="seconds")
-  print(f"[{now}] {msg}", flush=True)
+logger = setup_logger()
+ALLOWED_CHANNELS = {"web", "mobile", "pos"}
+ALLOWED_CURRENCIES = {"NPR"}
 
 def ensure_schema_and_tables(conn: Connection, cfg: Config) -> None:
-  log("Creating schema and tables if they don't exist... ")
+  logger.info("Creating schema and tables if they do not exist...")
   with conn.cursor() as cur:
     cur.execute(f"CREATE SCHEMA IF NOT EXISTS {cfg.schema}")
 
@@ -38,6 +41,29 @@ def ensure_schema_and_tables(conn: Connection, cfg: Config) -> None:
         txn_day DATE NOT NULL
         );
       """)
+
+    cur.execute(f"""
+      CREATE TABLE IF NOT EXISTS {cfg.schema}.etl_runs (
+        run_id BIGSERIAL PRIMARY KEY,
+        started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        finished_at TIMESTAMPTZ,
+        status TEXT NOT NULL DEFAULT 'running',
+        source_path TEXT NOT NULL,
+        rows_read INT NOT NULL DEFAULT 0,
+        rows_loaded INT NOT NULL DEFAULT 0,
+        bad_rows INT NOT NULL DEFAULT 0,
+        message TEXT
+      );
+      """)
+    cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS {cfg.schema}.bad_transactions ('
+                id BIGSERIAL PRIMARY KEY,
+                run_id BIGINT NOT NULL REFERENCES {cfg.schema}.etl_runs(run_id),
+                raw_row JSONB NOT NULL,
+                error TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+                """)
     
 def ingest_csv_to_raw(conn: Connection, cfg: Config) -> int:
   log(f"Reading CSV file from {cfg.csv_path}")
