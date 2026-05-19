@@ -26,6 +26,7 @@ def ensure_schema_and_tables(conn: Connection, cfg: Config) -> None:
         amount NUMERIC(12, 2) NOT NULL,
         currency TEXT NOT NULL,
         channel TEXT NOT NULL,
+        run_id BIGINT NOT NULL REFERENCES {cfg.schema}.etl_runs(run_id),
         ingested_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
       """)
@@ -38,10 +39,12 @@ def ensure_schema_and_tables(conn: Connection, cfg: Config) -> None:
         amount NUMERIC(12, 2) NOT NULL,
         currency TEXT NOT NULL,
         channel TEXT NOT NULL,
-        txn_day DATE NOT NULL
+        txn_day DATE NOT NULL,
+        last_run_id BIGINT NOT NULL REFERENCES {cfg.schema}.etl_runs(run_id)
         );
       """)
 
+    # Log bad records into a separate table for later analysis
     cur.execute(f"""
       CREATE TABLE IF NOT EXISTS {cfg.schema}.etl_runs (
         run_id BIGSERIAL PRIMARY KEY,
@@ -55,15 +58,16 @@ def ensure_schema_and_tables(conn: Connection, cfg: Config) -> None:
         message TEXT
       );
       """)
+    # Stores problem having records for later analysis.
     cur.execute(f"""
-                CREATE TABLE IF NOT EXISTS {cfg.schema}.bad_transactions ('
-                id BIGSERIAL PRIMARY KEY,
-                run_id BIGINT NOT NULL REFERENCES {cfg.schema}.etl_runs(run_id),
-                raw_row JSONB NOT NULL,
-                error TEXT NOT NULL,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-                );
-                """)
+      CREATE TABLE IF NOT EXISTS {cfg.schema}.bad_transactions ('
+        id BIGSERIAL PRIMARY KEY,
+        run_id BIGINT NOT NULL REFERENCES {cfg.schema}.etl_runs(run_id),
+        raw_row JSONB NOT NULL,
+        error TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        """)
     
 def ingest_csv_to_raw(conn: Connection, cfg: Config) -> int:
   log(f"Reading CSV file from {cfg.csv_path}")
