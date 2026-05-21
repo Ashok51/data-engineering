@@ -68,7 +68,37 @@ def ensure_schema_and_tables(conn: Connection, cfg: Config) -> None:
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
         """)
-    
+
+def start_run(conn: Connection, cfg: Config) -> int:
+  logger.info("adding etl_run record")
+  with conn.cursor() as cur:
+    cur.execute(f"""
+                INSERT INTO {cfg.schema}.etl_runs (source_path)
+                VALUES (%s)
+                RETURNING run_id;
+                """, (cfg.csv_path,))
+    run_id = cur.fetchone()[0]
+  logger.info(f"Started ETL run with run_id={run_id}")
+  
+  return run_id
+  
+def finish_run(conn: Connection, cfg: Config, run_id: int, status: str, rows_read: int, rows_loaded: int, bad_rows: int, message: str = None) -> None:
+  logger.info(f"finishing run_id={run_id} with status={status}")
+  with conn.cursor() as cur:
+    cur.execute(
+                f"""
+                UPDATE {cfg.schema}.etl_runs
+                SET finished_at = NOW(),
+                    status = %s,
+                    rows_read = %s,
+                    rows_loaded = %s,
+                    bad_rows = %s,
+                    message = %s
+                WHERE run_id = %s;
+                """,
+                (status, rows_read, rows_loaded, bad_rows, message, run_id)
+    )
+
 def ingest_csv_to_raw(conn: Connection, cfg: Config) -> int:
   log(f"Reading CSV file from {cfg.csv_path}")
   rows = []
