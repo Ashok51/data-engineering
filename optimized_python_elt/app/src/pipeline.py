@@ -99,6 +99,12 @@ def finish_run(conn: Connection, cfg: Config, run_id: int, status: str, rows_rea
                 (status, rows_read, rows_loaded, bad_rows, message, run_id)
     )
 
+def iter_csv_rows(cfg: Config) -> Iterator[Dict[str, str]]:
+  with open(cfg.csv_path, newline='', encoding='utf-8') as csvfile:
+    reader = csv.DictReader(csvfile)
+    for row in reader:
+      yield row  # yielding one row at a time, return loads entire rows into memory, which is not ideal for large files
+
 def ingest_csv_to_raw(conn: Connection, cfg: Config) -> int:
   log(f"Reading CSV file from {cfg.csv_path}")
   rows = []
