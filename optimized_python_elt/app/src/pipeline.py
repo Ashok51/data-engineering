@@ -105,6 +105,39 @@ def iter_csv_rows(cfg: Config) -> Iterator[Dict[str, str]]:
     for row in reader:
       yield row  # yielding one row at a time, return loads entire rows into memory, which is not ideal for large files
 
+def validate_row(row: Dict[str, str]) -> Tuple[bool, Dict[str, Any] | None, str | None]:
+  try:
+    txn_id = row['txn_id'].strip()
+    if not txn_id:
+      return False, None, "txn_id is empty"
+    
+    account_id = int(row['account_id'])
+    ts_event = row['ts_event'].strip()
+    amount = float(row['amount'])
+    currency = row['currency'].strip().upper()
+    channel = row['channel'].strip().lower()
+
+    if amount <= 0:
+      return False, None, "amount must be > 0"
+
+    if channel not in ALLOWED_CHANNELS:
+      return False, None, f"Invalid channel: {channel}"
+    
+    if currency not in ALLOWED_CURRENCIES:
+      return False, None, f"Invalid currency: {currency}"
+
+    cleaned = {
+      'txn_id': txn_id,
+      'account_id': account_id,
+      'ts_event': ts_event,
+      'amount': amount,
+      'currency': currency,
+      'channel': channel
+    }
+    return True, cleaned, None
+  except Exception as e:
+    return False, None, f"validation error: {str(e)}"
+
 def ingest_csv_to_raw(conn: Connection, cfg: Config) -> int:
   log(f"Reading CSV file from {cfg.csv_path}")
   rows = []
