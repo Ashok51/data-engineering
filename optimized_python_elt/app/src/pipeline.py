@@ -221,48 +221,54 @@ def insert_raw_batch_with_retries(conn: Connection, cfg: Config, run_id: int, ba
       logger.warning(f"Batch insert failed: {e}. Retrying in {sleep_for} seconds")
       time.sleep(sleep_for)
 
-def transform_raw_to_clean(conn: Connection, cfg: Config) -> int:
-  log("Transforming raw_transactions to clean_transactions...(upsert by txn_id to avoid duplicates)")
-
-  with conn.cursor() as cur:
-    cur.execute(
-      f"""
-      INSERT INTO {cfg.schema}.clean_transactions
-      (txn_id, account_id, ts_event, amount, currency, channel, txn_day)
-      SELECT
-        txn_id,
-        account_id,
-        ts_event,
-        amount,
-        currency,
-        channel,
-        Date(ts_event) as txn_day
-      FROM {cfg.schema}.raw_transactions
-      ORDER BY id
-      ON CONFLICT (txn_id)
-      DO UPDATE SET
-        account_id = EXCLUDED.account_id,
-        ts_event = EXCLUDED.ts_event,
-        amount = EXCLUDED.amount,
-        currency = EXCLUDED.currency,
-        channel = EXCLUDED.channel,
-        txn_day = EXCLUDED.txn_day
-        ;
-      """)
-    cur.execute(f"SELECT COUNT(*) FROM {cfg.schema}.clean_transactions;")
-    count = cur.fetchone()[0]
-
-  log(f"clean_transactions table have {count} rows.")
-  return int(count)
-
-def preview_results(conn: Connection, cfg: Config) -> None:
-  log("Previewing some rows from clean_transactions:")
+def transform_upsert_clean(conn: Connection, cfg: Config, run_id: int) -> int:
+  logger.info("Transforming raw into clean with UPSERT")
   with conn.cursor() as cur:
     cur.execute(f"""
-                SELECT txn_id, account_id, ts_event, amount, currency, channel, txn_day
+                INSERT INTO {cfg.schema}.clean_transactions (txn_id, account_id, ts_event, amount, currency, channel, txn_day, last_run_id)
+                SELECT
+                  txn_id,
+                  account_id,
+                  ts_event,
+                  amount,
+                  currency,
+                  channel,
+                  DATE(ts_event) AS txn_day,
+                  %s AS last_run_id
+                FROM {cfg.schema}.raw_transactions
+                WHERE run_id = %s
+                ON CONFLICT (txn_id) DO UPDATE SET
+                  account_id = EXCLUDED.account_id,
+                  ts_event = EXCLUDED.ts_event,
+                  amount = EXCLUDED.amount,
+                  currency = EXCLUDED.currency,
+                  channel = EXCLUDED.channel,
+                  txn_day = EXCLUDED.txn_day,
+                  last_run_id = EXCLUDED.last_run_id;
+                """, (run_id, run_id))
+    cur.execute(f"SELECT COUNT(*) FROM {cfg.schema}.clean_transactions;")
+    total = cur.fetchone()[0]
+
+  logger.info(f"Transaction Complete. clean_transactions total rows: {total}")
+  return int(total)
+
+def preview_run_summary(conn: Connection, cfg: Config, run_id: int) -> None:
+  with conn.cursor() as cur:
+    cur.execute(f"""
+                SELECT status, rows_read, rows_loaded, bad_rows, message
+                FROM {cfg.schema}.etl_runs
+                WHERE run_id = %s;
+                """, (run_id,))
+    
+    print(cur.fetchone(), flush=True)
+
+    cur.execute(f"""
+                SELECT txn_id, account_id, ts_event, amount, currency, channel, txn_day, last_run_id
                 FROM {cfg.schema}.clean_transactions
-                LIMIT 5;
+                ORDER BY ts_event
+                LIMIT 10;
                 """)
     rows = cur.fetchall()
+
     for row in rows:
-      log(f"  {row}")
+      print(row, flush=True)
