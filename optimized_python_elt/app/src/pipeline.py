@@ -137,36 +137,89 @@ def validate_row(row: Dict[str, str]) -> Tuple[bool, Dict[str, Any] | None, str 
     return True, cleaned, None
   except Exception as e:
     return False, None, f"validation error: {str(e)}"
+  
+def insert_bad_row(conn: Connection, cfg: Config, run_id: int, row: Dict[str, str], error: str) -> None:
+  with conn.cursor() as cur:
+    cur.execute(
+      f"""
+      INSERT INTO {cfg.schema}.bad_transactions (run_id, raw_row, error)
+      VALUES (%s, %s::jsonb, %s);
+      """,
+      (run_id, json.dumps(row), error)
+    )
 
-def ingest_csv_to_raw(conn: Connection, cfg: Config) -> int:
-  log(f"Reading CSV file from {cfg.csv_path}")
-  rows = []
-  with open(cfg.csv_path, newline='', encoding='utf-8') as csvfile:
-    reader = csv.DictReader(csvfile)
-    for row in reader:
-      rows.append(row)
-
-  log(f"Loaded {len(rows)} rows from csv into memory.")
+def insert_raw_batch(conn: Connection, cfg: Config, run_id: int, batch: List[Dict[str, Any]]) -> None:
+  if not batch:
+    return 0
+  
+  values = [
+    (
+      row['txn_id'],
+      row['account_id'],
+      row['ts_event'],
+      row['amount'],
+      row['currency'],
+      row['channel'],
+      run_id
+    )
+    for row in batch
+  ]
 
   with conn.cursor() as cur:
-    for row in rows:
-      cur.execute(f"""
-                  INSERT INTO {cfg.schema}.raw_transactions
-                  (txn_id, account_id, ts_event, amount, currency, channel)
-                  values (%s, %s, %s, %s, %s, %s)
-                  """,
-                  (
-                    row['txn_id'],
-                    int(row['account_id']),
-                    row['ts_event'],
-                    float(row['amount']),
-                    row['currency'],
-                    row['channel']
-                  )
-      )
+    cur.executemany(
+      f"""
+      INSERT INTO {cfg.schema}.raw_transactions
+      (txn_id, account_id, ts_event, amount, currency, channel, run_id)
+      VALUES (%s, %s, %s, %s, %s, %s, %s)
+      ON CONFLICT (run_id, txn_id) DO NOTHING; -- avoid duplicates if retrying the same batch
+      """,
+      values
+    )
+  return len(batch)
 
-  log(f"Ingested {len(rows)} rows into raw_transactions table.")
-  return len(rows)
+def ingest_with_batching_and_quarentine(conn: Connection, cfg: Config, run_id: int) -> Tuple[int, int, int]:
+  logger.info(f"Starting ingestion with batch_size={cfg.batch_size}")
+  rows_read = 0
+  rows_loaded = 0
+  bad_rows = 0
+  batch: List[Dict[str, Any]] = []
+
+  for row in iter_csv_rows(cfg):
+    rows_read += 1
+    ok, cleaned, err = validate_row(row)
+
+    if not ok:
+      bad_rows += 1
+      insert_bad_row(conn, cfg, run_id, row, err or "unknown error")
+      continue
+
+    batch.append(cleaned)
+
+    if len(batch) >= cfg.batch_size:
+      rows_loaded += insert_raw_batch_with_retries(conn, cfg, run_id, batch)
+      batch.clear()  # clear the batch after inserting
+
+  if batch:
+    rows_loaded += insert_raw_batch_with_retries(conn, cfg, run_id, batch)
+    batch.clear()
+
+  logger.info(f"Finished ingestion: rows_read={rows_read}, rows_loaded={rows_loaded}, bad_rows={bad_rows}")
+  return rows_read, rows_loaded, bad_rows
+
+
+def insert_raw_batch_with_retries(conn: Connection, cfg: Config, run_id: int, batch: List[Dict[str, Any]]) -> int:
+  attempt = 0
+  while True:
+    try:
+      return insert_raw_batch(conn, cfg, run_id, batch)
+    except OperationalError as e:
+      attempt += 1
+      if attempt > cfg.max_retries:
+        logger.error(f"Failed to insert batch after {attempt} attempts: {str(e)}")
+        raise
+      sleep_for = cfg.retry_backoff_seconds * attempt
+      logger.warning(f"Batch insert failed: {e}. Retrying in {sleep_for} seconds")
+      time.sleep(sleep_for)
 
 def transform_raw_to_clean(conn: Connection, cfg: Config) -> int:
   log("Transforming raw_transactions to clean_transactions...(upsert by txn_id to avoid duplicates)")
