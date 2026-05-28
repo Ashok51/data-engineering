@@ -8,11 +8,11 @@ import time
 
 logger = setup_logger()
 
-def connect_with_retries(cfg: Config) -> Connection:
-  attepmt = 0
+def connect_with_retries(cfg: Config) -> connection:
+  attempt = 0
   while True:
     try:
-      logger.info(f"Attempting to connect to the database. Attempt {attepmt + 1}")
+      logger.info(f"Attempting to connect to the database. Attempt {attempt + 1}")
       conn = psycopg.connect("".join(cfg.dsn()))
       logger.info("Successfully connected to the database.")
 

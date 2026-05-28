@@ -17,6 +17,21 @@ def ensure_schema_and_tables(conn: Connection, cfg: Config) -> None:
   with conn.cursor() as cur:
     cur.execute(f"CREATE SCHEMA IF NOT EXISTS {cfg.schema}")
 
+    # Log bad records into a separate table for later analysis
+    cur.execute(f"""
+      CREATE TABLE IF NOT EXISTS {cfg.schema}.etl_runs (
+        run_id BIGSERIAL PRIMARY KEY,
+        started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        finished_at TIMESTAMPTZ,
+        status TEXT NOT NULL DEFAULT 'running',
+        source_path TEXT NOT NULL,
+        rows_read INT NOT NULL DEFAULT 0,
+        rows_loaded INT NOT NULL DEFAULT 0,
+        bad_rows INT NOT NULL DEFAULT 0,
+        message TEXT
+      );
+      """)
+
     cur.execute(f"""
       CREATE TABLE IF NOT EXISTS {cfg.schema}.raw_transactions (
         id BIGSERIAL PRIMARY KEY,
@@ -27,7 +42,8 @@ def ensure_schema_and_tables(conn: Connection, cfg: Config) -> None:
         currency TEXT NOT NULL,
         channel TEXT NOT NULL,
         run_id BIGINT NOT NULL REFERENCES {cfg.schema}.etl_runs(run_id),
-        ingested_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        ingested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (run_id, txn_id)
       );
       """)
     
@@ -44,23 +60,9 @@ def ensure_schema_and_tables(conn: Connection, cfg: Config) -> None:
         );
       """)
 
-    # Log bad records into a separate table for later analysis
-    cur.execute(f"""
-      CREATE TABLE IF NOT EXISTS {cfg.schema}.etl_runs (
-        run_id BIGSERIAL PRIMARY KEY,
-        started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        finished_at TIMESTAMPTZ,
-        status TEXT NOT NULL DEFAULT 'running',
-        source_path TEXT NOT NULL,
-        rows_read INT NOT NULL DEFAULT 0,
-        rows_loaded INT NOT NULL DEFAULT 0,
-        bad_rows INT NOT NULL DEFAULT 0,
-        message TEXT
-      );
-      """)
     # Stores problem having records for later analysis.
     cur.execute(f"""
-      CREATE TABLE IF NOT EXISTS {cfg.schema}.bad_transactions ('
+      CREATE TABLE IF NOT EXISTS {cfg.schema}.bad_transactions (
         id BIGSERIAL PRIMARY KEY,
         run_id BIGINT NOT NULL REFERENCES {cfg.schema}.etl_runs(run_id),
         raw_row JSONB NOT NULL,
@@ -171,7 +173,7 @@ def insert_raw_batch(conn: Connection, cfg: Config, run_id: int, batch: List[Dic
       INSERT INTO {cfg.schema}.raw_transactions
       (txn_id, account_id, ts_event, amount, currency, channel, run_id)
       VALUES (%s, %s, %s, %s, %s, %s, %s)
-      ON CONFLICT (run_id, txn_id) DO NOTHING; -- avoid duplicates if retrying the same batch
+      ON CONFLICT (run_id, txn_id) DO NOTHING;
       """,
       values
     )

@@ -1,8 +1,8 @@
 import logging
 import sys
 
-def setup_logger() -> logging.logger:
-    logger = Logging.getLogger("de_pipeline_logger")
+def setup_logger() -> logging.Logger:
+    logger = logging.getLogger("de_pipeline_logger")
     if logger.handlers:
         return logger
     logger.setLevel(logging.INFO)

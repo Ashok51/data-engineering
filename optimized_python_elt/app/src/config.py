@@ -7,12 +7,12 @@ def env_str(key, default: str | None = None) -> str:
   return val
 
 def env_int(key, default: int | None = None) -> int:
-  raw = os.getenv(key)
-  if raw is None or raw.strip() == "":
-    if default is not None:
-      raise ValueError(f"Environment variable '{key}' is missing.")
-    return default
-  return int(raw)
+    raw = os.getenv(key)
+    if raw is None or raw.strip() == "":
+        if default is None:
+            raise ValueError(f"Environment variable '{key}' is missing.")
+        return default
+    return int(raw)
 
 class Config:
   def __init__(self):
