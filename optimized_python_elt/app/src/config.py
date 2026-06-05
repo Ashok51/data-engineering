@@ -7,12 +7,12 @@ def env_str(key, default: str | None = None) -> str:
   return val
 
 def env_int(key, default: int | None = None) -> int:
-  raw = os.getenv(key)
-  if raw is None or raw.strip() == "":
-    if default is not None:
-      raise ValueError(f"Environment variable '{key}' is missing.")
-    return default
-  return int(raw)
+    raw = os.getenv(key)
+    if raw is None or raw.strip() == "":
+        if default is None:
+            raise ValueError(f"Environment variable '{key}' is missing.")
+        return default
+    return int(raw)
 
 class Config:
   def __init__(self):
@@ -23,6 +23,10 @@ class Config:
     self.pg_db = env_str("POSTGRES_DB")
     self.schema =  env_str("APP_SCHEMA", "data_pipeline_example_2")
     self.csv_path = env_str("CSV_PATH", "data/transactions.csv")
+
+    self.batch_size = env_int("BATCH_SIZE", 500)
+    self.max_retries = env_int("MAX_RETRIES", 5)
+    self.retry_backoff_seconds = env_int("RETRY_BACKOFF_SECONDS", 2)
 
   def dsn(self):
     return(
