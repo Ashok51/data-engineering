@@ -13,6 +13,9 @@ logger = setup_logger()
 
 def main():
     cfg = Config()
+    print("="*50, flush=True)
+    print(cfg, flush=True)
+    print("="*50, flush=True)
     with get_conn(cfg) as conn:
         run_id = None
         rows_read = 0
@@ -45,3 +48,6 @@ def main():
             except Exception as finish_error:
                 logger.error(f"Failed to log failure: {finish_error}")
             raise
+
+if __name__ == "__main__":
+    main()
